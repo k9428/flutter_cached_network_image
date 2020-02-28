@@ -1,3 +1,6 @@
+# Android, ios, Web
+This is forked code from original cached_network_image lib. I have added web support int this. 
+
 # Cached network image
 Widget now uses builders for the placeholder and error widget and uses sqflite for cache management. See the [docs](https://pub.dartlang.org/documentation/cached_network_image/latest/cached_network_image/cached_network_image-library.html) for more information.
 
