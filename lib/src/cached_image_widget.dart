@@ -129,6 +129,9 @@ class CachedNetworkImage extends StatefulWidget {
   /// If not given a value, defaults to FilterQuality.low.
   final FilterQuality filterQuality;
 
+  bool isImageLoadStarted = false;
+  bool isImageLoaded = false;
+
   CachedNetworkImage({
     Key key,
     @required this.imageUrl,
@@ -202,7 +205,7 @@ class CachedNetworkImageState extends State<CachedNetworkImage> with TickerProvi
 
   @override
   void didUpdateWidget(CachedNetworkImage oldWidget) {
-    if (oldWidget.imageUrl != widget.imageUrl) {
+    if (!kIsWeb && oldWidget.imageUrl != widget.imageUrl) {
       _streamBuilderKey = UniqueKey();
       if (!widget.useOldImageOnUrlChange) {
         _disposeImageHolders();
@@ -261,62 +264,80 @@ class CachedNetworkImageState extends State<CachedNetworkImage> with TickerProvi
   }
 
   Widget _animatedWidget() {
-    var fromMemory = _cacheManager().getFileFromMemory(widget.imageUrl);
-
-    return StreamBuilder<FileInfo>(
-      key: _streamBuilderKey,
-      initialData: fromMemory,
-      stream: _cacheManager()
-          .getFile(widget.imageUrl, headers: widget.httpHeaders)
-          // ignore errors if not mounted
-          .handleError(() {}, test: (_) => !mounted)
-          .where((f) => f?.originalUrl != fromMemory?.originalUrl || f?.validTill != fromMemory?.validTill),
-      builder: (BuildContext context, AsyncSnapshot<FileInfo> snapshot) {
-        if (snapshot.hasError) {
-          // error
-          if (_imageHolders.isEmpty || _imageHolders.last.error == null) {
-            _addImage(image: null, error: snapshot.error);
-          }
+    if (kIsWeb) {
+      return Image.network(widget.imageUrl, width: widget.width, height: widget.height,
+          loadingBuilder: (BuildContext context, Widget child, ImageChunkEvent loadingProgress) {
+//        print("loadingProgress "+loadingProgress.toString()+","+child.toString());
+        if (!widget.isImageLoadStarted && !widget.isImageLoaded) {
+          widget.isImageLoadStarted = true;
+          return _placeholder(context);
         } else {
-          var fileInfo = snapshot.data;
-          if (fileInfo == null) {
-            // placeholder
-            if (_imageHolders.isEmpty || _imageHolders.last.image != null) {
-              _addImage(image: null, duration: widget.placeholderFadeInDuration ?? Duration.zero);
-            }
-          } else if (_imageHolders.isEmpty ||
-              _imageHolders.last.image?.originalUrl != fileInfo.originalUrl ||
-              _imageHolders.last.image?.validTill != fileInfo.validTill) {
-            _addImage(image: fileInfo, duration: _imageHolders.isNotEmpty ? null : Duration.zero);
-          }
-        }
-
-        var children = <Widget>[];
-        for (var holder in _imageHolders) {
-          if (holder.error != null) {
-            children.add(_transitionWidget(holder: holder, child: _errorWidget(context, holder.error)));
-          } else if (holder.image == null) {
-            children.add(_transitionWidget(holder: holder, child: _placeholder(context)));
+          if (loadingProgress == null) {
+            widget.isImageLoaded = true;
+            return child;
           } else {
-            children.add(_transitionWidget(
-                holder: holder,
-                child: KeyedSubtree(
-                  key: Key(holder.image.file.path),
-                  child: _image(
-                    context,
-                    FileImage(holder.image.file),
-                  ),
-                )));
+            return _placeholder(context);
           }
         }
+      });
+    } else {
+      var fromMemory = _cacheManager().getFileFromMemory(widget.imageUrl);
 
-        return Stack(
-          fit: StackFit.passthrough,
-          alignment: widget.alignment,
-          children: children.toList(),
-        );
-      },
-    );
+      return StreamBuilder<FileInfo>(
+        key: _streamBuilderKey,
+        initialData: fromMemory,
+        stream: _cacheManager()
+            .getFile(widget.imageUrl, headers: widget.httpHeaders)
+            // ignore errors if not mounted
+            .handleError(() {}, test: (_) => !mounted)
+            .where((f) => f?.originalUrl != fromMemory?.originalUrl || f?.validTill != fromMemory?.validTill),
+        builder: (BuildContext context, AsyncSnapshot<FileInfo> snapshot) {
+          if (snapshot.hasError) {
+            // error
+            if (_imageHolders.isEmpty || _imageHolders.last.error == null) {
+              _addImage(image: null, error: snapshot.error);
+            }
+          } else {
+            var fileInfo = snapshot.data;
+            if (fileInfo == null) {
+              // placeholder
+              if (_imageHolders.isEmpty || _imageHolders.last.image != null) {
+                _addImage(image: null, duration: widget.placeholderFadeInDuration ?? Duration.zero);
+              }
+            } else if (_imageHolders.isEmpty ||
+                _imageHolders.last.image?.originalUrl != fileInfo.originalUrl ||
+                _imageHolders.last.image?.validTill != fileInfo.validTill) {
+              _addImage(image: fileInfo, duration: _imageHolders.isNotEmpty ? null : Duration.zero);
+            }
+          }
+
+          var children = <Widget>[];
+          for (var holder in _imageHolders) {
+            if (holder.error != null) {
+              children.add(_transitionWidget(holder: holder, child: _errorWidget(context, holder.error)));
+            } else if (holder.image == null) {
+              children.add(_transitionWidget(holder: holder, child: _placeholder(context)));
+            } else {
+              children.add(_transitionWidget(
+                  holder: holder,
+                  child: KeyedSubtree(
+                    key: Key(holder.image.file.path),
+                    child: _image(
+                      context,
+                      FileImage(holder.image.file),
+                    ),
+                  )));
+            }
+          }
+
+          return Stack(
+            fit: StackFit.passthrough,
+            alignment: widget.alignment,
+            children: children.toList(),
+          );
+        },
+      );
+    }
   }
 
   Widget _transitionWidget({_ImageTransitionHolder holder, Widget child}) {
